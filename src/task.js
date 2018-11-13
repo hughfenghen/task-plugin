@@ -29,17 +29,25 @@ export class Task {
 
     async run(data, needReset = true, garbage = [], propagate = true) {
         garbage.push(this);
-        
+
         var inputs = {};
-        
-        await Promise.all(this.getOutputs().map(async key => {
-            inputs[key] = await Promise.all(this.inputs[key].map(async con => {
-                if (con) {
-                    await con.run(data, false, garbage, false);
-                    return con.get();
-                }
-            }));
-        }));
+        var connections = []
+
+        this.getOutputs().forEach((key) => {
+            this.inputs[key].forEach((con) => {
+                connections.push({ key, con })
+            })
+        })
+
+        await Promise.all(connections.map(({ con }) => con && con.run(data, false, garbage, false)))
+
+        connections.forEach(({ key, con }) => {
+            if (inputs[key]) {
+                inputs[key].push(con.get())
+            } else {
+                inputs[key] = [con.get()]
+            }
+        })
 
         if (!this.outputData) {
             this.outputData = await this.action(inputs, data);
@@ -48,12 +56,12 @@ export class Task {
                 await Promise.all(
                     this.next
                         .filter(f => !this.closed.includes(f.key))
-                        .map(async f => 
+                        .map(async f =>
                             await f.task.run(data, false, garbage)
                         )
                 );
         }
-        
+
         if (needReset)
             garbage.map(t => t.reset());
     }
